@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="{{LANG}}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{NAME}} — CV</title>
+<style>
+  /* ============================================================
+     Template "tuerkis-sidebar"
+     Zweispaltig mit durchlaufender Petrol-Seitenleiste.
+
+     Grundlage: das Design-System "Lebenslauf Petrol" des Nutzers, abgelegt
+     unter writing-samples/vorlagen/lebenslauf-petrol-design/. Alle Farben,
+     Groessen und Abstaende sind 1:1 aus dessen tokens/ uebernommen — nicht
+     geschaetzt. Die Token-Namen sind als CSS-Variablen erhalten, damit ein
+     Abgleich mit der Quelle moeglich bleibt.
+
+     Drei bewusste Abweichungen vom Design-System, jeweils vom Nutzer
+     entschieden (2026-08-28):
+
+     1. KEINE Google Fonts. Das System sieht Source Serif 4 / Source Sans 3
+        vor; beides sind variable Schriften. Beim PDF-Satz weisen deren
+        Glyphen Vorschuebe auf, die Textextraktoren als Wortfugen lesen
+        ("SUM M ARY", "Germ any") — womit die Stichwortsuche eines
+        Bewerbermanagementsystems ins Leere laeuft. Stattdessen ein statischer
+        Systemstack. Die Serife am Namen bleibt erhalten, nur eben statisch.
+     2. FLIESSENDER Umbruch statt fester Seiten. Das System schreibt feste
+        A4-Seiten vor; career-ops rendert aus cv.md fliessend, damit jede
+        Bewerbung ohne Handarbeit durchlaeuft.
+     3. KEINE Unterschrift. Fuer die Schreibschrift Caveat gibt es keinen
+        verlaesslichen statischen Ersatz.
+
+     Reihenfolgeregel: generate-pdf.mjs prueft, dass die Dokumentreihenfolge
+     der von cv.md entspricht — ein Bewerbermanagementsystem liest den Text in
+     dieser Folge, nicht in der visuellen Anordnung. In die Seitenleiste darf
+     deshalb nur, was in cv.md VOR der Berufserfahrung steht. Aktuell also
+     Kurzprofil und Kernkompetenzen; die technischen Kenntnisse stehen in
+     cv.md hinten und bleiben darum in der Hauptspalte.
+     ============================================================ */
+
+  /* --- Farben (tokens/colors.css) --- */
+  :root {
+    --petrol-900: #1F4A5A;
+    --petrol-800: #28596D;
+    --petrol-700: #31687C;
+    --petrol-600: #43798D;
+    --petrol-500: #5C90A2;
+    --petrol-200: #C9DCE3;
+    --petrol-100: #D6E3E8;
+
+    --ink-900: #333333;
+    --ink-600: #7E7E7E;
+    --ink-000: #FFFFFF;
+
+    --surface-sidebar: var(--petrol-700);
+    --text-body: var(--ink-900);
+    --text-meta: var(--ink-600);
+    --text-heading: var(--petrol-700);
+    --rule-main: var(--petrol-200);
+    --rule-sidebar: rgba(255, 255, 255, 0.45);
+    --bar-track: var(--petrol-100);
+
+    /* --- Typografie (tokens/typography.css), print-first in pt --- */
+    --size-name: 34pt;
+    --size-section: 11pt;
+    --size-entry: 10pt;
+    --size-body: 9pt;
+    --size-meta: 8.5pt;
+    --size-footnote: 8pt;
+    --lh-name: 0.95;
+    --lh-tight: 1.2;
+    --lh-body: 1.45;
+    --weight-regular: 400;
+    --weight-semibold: 600;
+    --tracking-section: 1.5px;
+
+    /* --- Abstaende (tokens/spacing.css) --- */
+    --col-sidebar: 34%;
+    --col-main: 66%;
+    --pad-sidebar: 22px;
+    --pad-main-top: 32px;
+    --pad-main-right: 32px;
+    --pad-main-left: 28px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 14px;
+    --space-4: 24px;
+    --space-5: 26px;
+    --rule-weight: 1px;
+    --portrait-size: 65%;
+    --portrait-ring: 4px;
+    --bar-height: 6px;
+    --bar-gap: 3px;
+
+    /* Statischer Ersatz fuer die Webfonts des Systems — siehe Abweichung 1. */
+    --font-display: 'Liberation Serif', 'Times New Roman', Georgia, 'DejaVu Serif', serif;
+    --font-body: 'Liberation Sans', 'Helvetica Neue', Arial, 'DejaVu Sans', sans-serif;
+
+    /* Randlos drucken. generate-pdf.mjs setzt zuletzt
+       `@page { margin: var(--page-margin, 0.6in) }`; ohne diese Angabe bliebe
+       ein weisser Rand und die Seitenleiste schwebte als Kasten auf dem Blatt,
+       statt bis an die Kante zu laufen. Die Innenabstaende uebernehmen
+       .sidebar und .main. */
+    --page-margin: 0;
+  }
+
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    /* Ligaturen aus: Headless Chromium ersetzt fi/fl/ffi beim PDF-Satz durch
+       U+FB01/FB02/FB03, und Textextraktoren geben sie so zurueck — aus
+       "Zertifizierung" wird ein Wort, das eine Stichwortsuche nicht findet.
+       Erforderliche Ligaturen (rlig) bleiben aktiv, damit z. B. arabische
+       Schrift korrekt geformt bliebe. */
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "dlig" 0;
+  }
+
+  html {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Die Seitenleiste ist ein Verlauf auf dem body, kein eigenes Element:
+     ein farbiger Kasten waere beim Seitenumbruch zu Ende, der Verlauf
+     wiederholt sich dagegen auf jeder gedruckten Seite. Der harte Farbstopp
+     bei 34 % ergibt eine Kante, keinen Verlauf — das System erlaubt Verlaeufe
+     nur an der Sprachleiste. */
+  body {
+    font-family: var(--font-body);
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+    color: var(--text-body);
+    background: linear-gradient(to right,
+      var(--surface-sidebar) 0,
+      var(--surface-sidebar) var(--col-sidebar),
+      var(--ink-000) var(--col-sidebar),
+      var(--ink-000) 100%);
+    font-variant-ligatures: none;
+    font-feature-settings: "liga" 0, "clig" 0, "dlig" 0;
+  }
+
+  .page {
+    width: 100%;
+    max-width: {{PAGE_WIDTH}};
+    margin: 0 auto;
+    display: flex;
+    align-items: flex-start;
+  }
+
+  /* ===================== SEITENLEISTE ===================== */
+  .sidebar {
+    width: var(--col-sidebar);
+    flex: 0 0 var(--col-sidebar);
+    padding: var(--pad-sidebar);
+    color: var(--ink-000);
+  }
+
+  .sidebar .section {
+    margin-bottom: var(--space-5);
+  }
+
+  .sidebar .section-title {
+    font-size: var(--size-section);
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-section);
+    color: var(--ink-000);
+    border-bottom: var(--rule-weight) solid var(--rule-sidebar);
+    padding-bottom: 5px;
+    margin-bottom: var(--space-2);
+    line-height: var(--lh-tight);
+  }
+
+  .sidebar .summary-text {
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+    color: var(--ink-000);
+  }
+
+  .sidebar .summary-text strong {
+    font-weight: var(--weight-semibold);
+  }
+
+  /* Kompetenzen als Punktliste. Das System verbietet Rahmen um
+     Inhaltsbloecke, deshalb keine Kaestchen wie im einspaltigen "tuerkis" —
+     der Aufzaehlungspunkt ist ein 3-px-Kreis aus CSS, kein Glyph und kein Icon. */
+  .sidebar .competencies-grid {
+    display: block;
+  }
+
+  .sidebar .competency-tag {
+    display: block;
+    background: none;
+    border: none;
+    border-radius: 0;
+    padding: 0 0 0 12px;
+    margin-bottom: 5px;
+    font-size: var(--size-body);
+    font-weight: var(--weight-regular);
+    color: var(--ink-000);
+    position: relative;
+    line-height: var(--lh-tight);
+  }
+
+  .sidebar .competency-tag::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0.5em;
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--ink-000);
+  }
+
+  .sidebar a {
+    color: var(--ink-000);
+    text-decoration: none;
+  }
+
+  /* Bewerbungsfoto: rund, 65 % der Leistenbreite, 4-px-Ring. Nur sichtbar,
+     wenn candidate.photo in config/profile.yml gesetzt ist — sonst bleibt der
+     Platzhalter leer und es wird kein <img> ausgegeben. In vielen Maerkten
+     werten Bewerbermanagementsysteme ein Foto ab, deshalb nie voreingestellt. */
+  .cv-photo {
+    display: block;
+    width: var(--portrait-size);
+    aspect-ratio: 1;
+    object-fit: cover;
+    margin: 0 auto var(--space-4);
+    border-radius: 50%;
+    border: var(--portrait-ring) solid var(--ink-000);
+  }
+
+  .cv-photo--rounded,
+  .cv-photo--square,
+  .cv-photo--circle {
+    border-radius: 50%;
+  }
+
+  /* ===================== HAUPTSPALTE ===================== */
+  .main {
+    width: var(--col-main);
+    flex: 0 0 var(--col-main);
+    padding: var(--pad-main-top) var(--pad-main-right) var(--pad-main-top) var(--pad-main-left);
+  }
+
+  .header {
+    margin-bottom: var(--space-4);
+  }
+
+  /* Einziger Serifeneinsatz im Dokument. Zweizeilig gedacht, daher der enge
+     Zeilenabstand von 0,95. */
+  .header h1 {
+    font-family: var(--font-display);
+    font-size: var(--size-name);
+    font-weight: var(--weight-semibold);
+    line-height: var(--lh-name);
+    color: var(--text-heading);
+    margin-bottom: var(--space-2);
+  }
+
+  .contact-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    font-size: var(--size-meta);
+    line-height: var(--lh-tight);
+    color: var(--text-meta);
+  }
+
+  .contact-row a {
+    color: var(--text-meta);
+    text-decoration: none;
+  }
+
+  .contact-row .separator {
+    color: var(--petrol-200);
+  }
+
+  /* Ein umgebrochener Link ist im PDF nicht klickbar und in der
+     Textextraktion zerrissen. */
+  a {
+    white-space: nowrap;
+  }
+
+  .main .section {
+    margin-bottom: var(--space-4);
+  }
+
+  .main .section-title {
+    font-size: var(--size-section);
+    font-weight: var(--weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-section);
+    color: var(--text-heading);
+    border-bottom: var(--rule-weight) solid var(--rule-main);
+    padding-bottom: 5px;
+    margin-bottom: var(--space-2);
+    line-height: var(--lh-tight);
+  }
+
+  /* --- Berufserfahrung --- */
+  .job {
+    margin-bottom: var(--space-3);
+  }
+
+  /* Datum steht 2 px ueber der Position; im Fluss heisst das: eigene Zeile
+     ueber dem Eintrag, rechtsbuendig neben der Position. */
+  .job-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-2);
+    margin-bottom: 2px;
+  }
+
+  .job-period,
+  .edu-year {
+    font-size: var(--size-meta);
+    color: var(--text-meta);
+    white-space: nowrap;
+  }
+
+  .job-role {
+    font-size: var(--size-entry);
+    font-weight: var(--weight-semibold);
+    color: var(--text-body);
+  }
+
+  /* Firmenzeile: Firma halbfett, Ort in Metagrau.
+     Das Design-System schreibt `Firma | Ort` in EINER Zeile vor. Der Builder
+     gibt beide aber als getrennte Bloecke aus (Firma oben neben dem Datum,
+     Ort unter der Position), sodass ein per ::before eingefuegter Strich
+     allein am Zeilenanfang staende — "| Suedlicher Muenchner Raum". Deshalb
+     hier ohne Strich; die Trennung leistet die eigene Zeile in Metagrau.
+     Sobald der Builder beide Werte in einem Element ausgibt, kann der Strich
+     zurueck. */
+  .job-company {
+    font-size: var(--size-entry);
+    font-weight: var(--weight-semibold);
+    color: var(--text-heading);
+  }
+
+  .job-location {
+    font-size: var(--size-meta);
+    color: var(--text-meta);
+  }
+
+  .job ul {
+    margin: var(--space-1) 0 0 14px;
+  }
+
+  .job li {
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+    margin-bottom: 2px;
+  }
+
+  /* --- Ausbildung --- */
+  .edu-item {
+    margin-bottom: var(--space-3);
+  }
+
+  .edu-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .edu-title {
+    font-size: var(--size-entry);
+    font-weight: var(--weight-semibold);
+    color: var(--text-body);
+  }
+
+  .edu-org {
+    font-size: var(--size-entry);
+    font-weight: var(--weight-semibold);
+    color: var(--text-heading);
+  }
+
+  .edu-desc {
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+    color: var(--text-body);
+    margin-top: 2px;
+  }
+
+  /* --- Projekte --- */
+  .project {
+    margin-bottom: var(--space-3);
+  }
+
+  .project-title {
+    font-size: var(--size-entry);
+    font-weight: var(--weight-semibold);
+    color: var(--text-body);
+  }
+
+  .project-badge {
+    font-size: var(--size-footnote);
+    color: var(--text-meta);
+    text-transform: uppercase;
+    letter-spacing: var(--tracking-section);
+    margin-left: var(--space-1);
+  }
+
+  .project-desc {
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+    margin-top: 2px;
+  }
+
+  .project-tech {
+    font-size: var(--size-meta);
+    color: var(--text-meta);
+    margin-top: 2px;
+  }
+
+  /* --- Kenntnisse, Zertifikate, Auszeichnungen --- */
+  .skill-category {
+    margin-bottom: var(--space-2);
+    font-size: var(--size-body);
+    line-height: var(--lh-body);
+  }
+
+  .skill-category strong,
+  .skill-category b {
+    font-weight: var(--weight-semibold);
+    color: var(--text-heading);
+  }
+
+  .cert-table,
+  .award-table {
+    width: 100%;
+    font-size: var(--size-body);
+  }
+
+  .cert-table tr,
+  .award-table tr {
+    line-height: 1.7;
+  }
+
+  /* --- Sprachleiste: 10 Segmente, einziger erlaubter Verlauf im System --- */
+  .language-bar {
+    display: flex;
+    gap: var(--bar-gap);
+    margin-top: var(--space-1);
+  }
+
+  .language-bar span {
+    height: var(--bar-height);
+    flex: 1;
+    background: var(--bar-track);
+  }
+
+  .language-bar span.on:nth-child(-n+2) { background: var(--petrol-900); }
+  .language-bar span.on:nth-child(n+3):nth-child(-n+4) { background: var(--petrol-800); }
+  .language-bar span.on:nth-child(n+5):nth-child(-n+6) { background: var(--petrol-700); }
+  .language-bar span.on:nth-child(n+7):nth-child(-n+8) { background: var(--petrol-600); }
+  .language-bar span.on:nth-child(n+9) { background: var(--petrol-500); }
+
+  /* --- Umbruchverhalten ---
+     Eine Rubrik soll nicht als Ueberschrift allein am Seitenfuss stehen, und
+     ein Eintrag nicht mitten im Satz umbrechen. */
+  .section-title {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  .job,
+  .edu-item,
+  .project {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* Rubriken ohne Inhalt ausblenden. Der Builder ersetzt einen Platzhalter
+     ohne Daten durch einen Leerstring; die Ueberschrift bliebe sonst als
+     verwaiste Zeile stehen ("ZERTIFIKATE" ohne ein einziges Zertifikat).
+     :empty greift nur bei wirklich leerem Element — genau der Fall hier, weil
+     der Platzhalter das einzige Kind ist. */
+  .section:has(> .cert-table:empty),
+  .section:has(> .award-table:empty),
+  .section:has(> .optional-body:empty) {
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Reihenfolge im Dokument = Reihenfolge in cv.md; generate-pdf.mjs
+       erzwingt das. In die Seitenleiste darf nur, was in cv.md vor der
+       Berufserfahrung steht. -->
+  <aside class="sidebar">
+    {{PHOTO}}
+    <div class="section">
+      <div class="section-title">{{SECTION_SUMMARY}}</div>
+      <div class="summary-text">{{SUMMARY_TEXT}}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_COMPETENCIES}}</div>
+      <div class="competencies-grid">
+        {{COMPETENCIES}}
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header">
+      <h1>{{NAME}}</h1>
+      <div class="contact-row">
+        <a href="tel:{{PHONE}}">{{PHONE}}</a>
+        <span class="separator">|</span>
+        <a href="mailto:{{EMAIL}}">{{EMAIL}}</a>
+        <span class="separator">|</span>
+        <a href="{{LINKEDIN_URL}}">{{LINKEDIN_DISPLAY}}</a>
+        <span class="separator">|</span>
+        <a href="{{PORTFOLIO_URL}}">{{PORTFOLIO_DISPLAY}}</a>
+        <span class="separator">|</span>
+        <span>{{LOCATION}}</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_EXPERIENCE}}</div>
+      {{EXPERIENCE}}
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_EDUCATION}}</div>
+      {{EDUCATION}}
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_PROJECTS}}</div>
+      <div class="optional-body">{{PROJECTS}}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_CERTIFICATIONS}}</div>
+      <div class="cert-table">{{CERTIFICATIONS}}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_AWARDS}}</div>
+      <div class="award-table">{{AWARDS}}</div>
+    </div>
+    <div class="section">
+      <div class="section-title">{{SECTION_SKILLS}}</div>
+      {{SKILLS}}
+    </div>
+  </main>
+
+</div>
+</body>
+</html>
